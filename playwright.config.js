@@ -8,7 +8,10 @@ export default defineConfig({
 
   reporter: [
     ["list"],
-    ["html", { open: "never" }]
+    ["html", {
+      outputFolder: "playwright-report",
+      open: "never"
+    }]
   ],
 
   use: {
