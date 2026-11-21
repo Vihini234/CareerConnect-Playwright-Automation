@@ -12,10 +12,29 @@ jobs:
   test:
     name: Run Playwright Tests
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: careerconnect
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
 
     steps:
       - name: Checkout automation repository
         uses: actions/checkout@v4
+
+      - name: Checkout CareerConnect application
+        uses: actions/checkout@v4
+        with:
+          repository: Vihini234/CareerConnect
+          path: CareerConnect
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -29,7 +48,57 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Initialize CareerConnect database
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mariadb-client
+          mysql -h127.0.0.1 -uroot -proot < database/setup.sql
+          mysql -h127.0.0.1 -uroot -proot careerconnect < CareerConnect/database/careerconnect.sql
+
+      - name: Install and start CareerConnect backend
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: careerconnect
+          JWT_SECRET: ci-test-secret
+        run: |
+          cd CareerConnect/backend
+          npm ci
+          nohup env DB_HOST="$DB_HOST" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" DB_NAME="$DB_NAME" JWT_SECRET="$JWT_SECRET" npm start > "$GITHUB_WORKSPACE/backend.log" 2>&1 &
+
+      - name: Install and start CareerConnect frontend
+        run: |
+          cd CareerConnect/frontend
+          npm ci
+          nohup npm run dev -- --host 127.0.0.1 > "$GITHUB_WORKSPACE/frontend.log" 2>&1 &
+
+      - name: Wait for CareerConnect services
+        run: |
+          for i in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:5000/api/health >/dev/null &&
+               curl --fail --silent http://127.0.0.1:5173 >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend log:"
+          cat backend.log
+          echo "Frontend log:"
+          cat frontend.log
+          exit 1
+
+      - name: Create Playwright test student
+        run: |
+          curl --fail --silent --show-error \
+            -X POST http://127.0.0.1:5000/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"name":"Playwright Test Student","email":"playwright@example.com","password":"Test12345","role":"student"}'
+
       - name: Run Playwright tests
+        env:
+          TEST_EMAIL: playwright@example.com
+          TEST_PASSWORD: Test12345
         run: npx playwright test
 
       - name: Upload Playwright report
