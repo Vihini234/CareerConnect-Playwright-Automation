@@ -24,22 +24,23 @@ async function createUserToken(request, role) {
 
 test.describe("Applications API Tests", () => {
 
-  test("Should reject student applications request without token", async ({ request }) => {
+  // Authentication tests
 
+  test("Should reject student applications request without token", async ({ request }) => {
     const response = await request.get(`${baseURL}/applications`);
 
     expect(response.status()).toBe(401);
   });
 
   test("Should reject company applications request without token", async ({ request }) => {
-
     const response = await request.get(`${baseURL}/applications/company`);
 
     expect(response.status()).toBe(401);
   });
 
-  test("Should reject student access to company applications", async ({ request }) => {
+  // Role-based authorization tests
 
+  test("Should reject student access to company applications", async ({ request }) => {
     const token = await createUserToken(request, "student");
 
     const response = await request.get(`${baseURL}/applications/company`, {
@@ -52,7 +53,6 @@ test.describe("Applications API Tests", () => {
   });
 
   test("Should reject student from updating application status", async ({ request }) => {
-
     const token = await createUserToken(request, "student");
 
     const response = await request.patch(`${baseURL}/applications/1/status`, {
@@ -67,8 +67,9 @@ test.describe("Applications API Tests", () => {
     expect(response.status()).toBe(403);
   });
 
-  test("Should allow company to retrieve its applications", async ({ request }) => {
+  // Company application retrieval tests
 
+  test("Should allow company to retrieve its applications", async ({ request }) => {
     const token = await createUserToken(request, "company");
 
     const response = await request.get(`${baseURL}/applications/company`, {
@@ -84,8 +85,9 @@ test.describe("Applications API Tests", () => {
     expect(Array.isArray(applications)).toBe(true);
   });
 
-  test("Should reject an invalid application status", async ({ request }) => {
+  // Application status validation tests
 
+  test("Should reject an invalid application status", async ({ request }) => {
     const token = await createUserToken(request, "company");
 
     const response = await request.patch(`${baseURL}/applications/1/status`, {
@@ -95,6 +97,42 @@ test.describe("Applications API Tests", () => {
       data: {
         status: "Pending"
       }
+    });
+
+    expect(response.status()).toBe(400);
+
+    const body = await response.json();
+
+    expect(body.message).toBe("Invalid status.");
+  });
+
+  test("Should reject updating a nonexistent application", async ({ request }) => {
+    const token = await createUserToken(request, "company");
+
+    const response = await request.patch(`${baseURL}/applications/999999/status`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      data: {
+        status: "Accepted"
+      }
+    });
+
+    expect(response.status()).toBe(404);
+
+    const body = await response.json();
+
+    expect(body.message).toBe("Application not found.");
+  });
+
+  test("Should reject an update when status is missing", async ({ request }) => {
+    const token = await createUserToken(request, "company");
+
+    const response = await request.patch(`${baseURL}/applications/1/status`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      data: {}
     });
 
     expect(response.status()).toBe(400);
